@@ -15,7 +15,7 @@ PACK_NAME = os.environ.get("STICKER_PACK_NAME")
 OWNER_ID = int(os.environ.get("OWNER_USER_ID"))
 
 # Increase timeout to 60 seconds for slow networks
-bot = Bot(token=TOKEN, request_kwargs={"timeout": 60})
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # -------------------------
