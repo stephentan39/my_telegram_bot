@@ -11,10 +11,9 @@ from aiogram.filters import CommandStart, Command
 # Environment Variables
 # -------------------------
 TOKEN = os.environ.get("BOT_TOKEN")
-PACK_NAME = os.environ.get("STICKER_PACK_NAME")
 OWNER_ID = int(os.environ.get("OWNER_USER_ID"))
+PACK_PREFIX = os.environ.get("STICKER_PACK_PREFIX", "funstickers")  # default prefix
 
-# Increase timeout to 60 seconds for slow networks
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
@@ -33,18 +32,28 @@ def resize_to_sticker(png_bytes):
     except Exception as e:
         raise Exception(f"Image resizing failed: {e}")
 
-async def pack_exists():
+async def get_bot_username():
+    """Retrieve bot username dynamically and lowercase it."""
+    info = await bot.me()
+    return info.username.lower()
+
+async def get_pack_name():
+    """Generate a valid sticker pack name based on prefix and bot username."""
+    username = await get_bot_username()
+    return f"{PACK_PREFIX}_by_{username}"
+
+async def pack_exists(pack_name):
     try:
-        await bot.get_sticker_set(PACK_NAME)
+        await bot.get_sticker_set(pack_name)
         return True
     except:
         return False
 
-async def create_pack(png_file):
+async def create_pack(pack_name, png_file):
     try:
         await bot.create_new_sticker_set(
             user_id=OWNER_ID,
-            name=PACK_NAME,
+            name=pack_name,
             title="Shared Sticker Pack",
             png_sticker=png_file,
             emojis="⭐"
@@ -52,11 +61,11 @@ async def create_pack(png_file):
     except Exception as e:
         raise Exception(f"Failed to create sticker pack: {e}")
 
-async def add_to_pack(png_file):
+async def add_to_pack(pack_name, png_file):
     try:
         await bot.add_sticker_to_set(
             user_id=OWNER_ID,
-            name=PACK_NAME,
+            name=pack_name,
             png_sticker=png_file,
             emojis="⭐"
         )
@@ -80,10 +89,11 @@ async def get_bot_me_with_retry(max_attempts=5):
 # -------------------------
 @dp.message(CommandStart())
 async def start(message: types.Message):
+    pack_name = await get_pack_name()
     await message.answer(
         "Hi! Send me a photo and I will prepare it for a sticker.\n\n"
         "You can then select objects to keep using Telegram's sticker editor.\n"
-        f"Sticker pack link: https://t.me/addstickers/{PACK_NAME}"
+        f"Sticker pack link: https://t.me/addstickers/{pack_name}"
     )
 
 @dp.message()
@@ -100,18 +110,19 @@ async def handle_photo(message: types.Message):
         photo_bytes = await file.read()
 
         sticker_file = resize_to_sticker(photo_bytes)
+        pack_name = await get_pack_name()
 
         # Ensure sticker pack exists
-        if not await pack_exists():
-            await create_pack(sticker_file)
+        if not await pack_exists(pack_name):
+            await create_pack(pack_name, sticker_file)
             await message.answer(
-                f"Sticker pack created!\nYou can add more here: https://t.me/addstickers/{PACK_NAME}"
+                f"Sticker pack created!\nYou can add more here: https://t.me/addstickers/{pack_name}"
             )
         else:
             try:
-                await add_to_pack(sticker_file)
+                await add_to_pack(pack_name, sticker_file)
                 await message.answer(
-                    f"Sticker added to pack!\nSee: https://t.me/addstickers/{PACK_NAME}"
+                    f"Sticker added to pack!\nSee: https://t.me/addstickers/{pack_name}"
                 )
             except Exception as e:
                 await message.answer(
