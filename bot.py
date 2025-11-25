@@ -6,49 +6,29 @@ from PIL import Image
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
-from aiogram.types import FSInputFile
-from aiohttp import ClientSession
 
 TOKEN = os.environ["BOT_TOKEN"]
-PACK_NAME = os.environ["STICKER_PACK_NAME"]  # e.g. mystickerpack_by_mybot
+PACK_NAME = os.environ["STICKER_PACK_NAME"]
 OWNER_ID = int(os.environ["OWNER_USER_ID"])
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-
 # -------------------------
 # Helpers
 # -------------------------
-async def remove_background(file_id):
-    """Uses Telegram's background removal API."""
-    url = f"https://api.telegram.org/bot{TOKEN}/removeBackgroundFile"
-    data = {"file_id": file_id}
-
-    async with ClientSession() as session:
-        async with session.post(url, data=data) as resp:
-            result = await resp.json()
-            if not result.get("ok"):
-                raise Exception("Background removal failed")
-            new_file_id = result["result"]["file_id"]
-
-    # Download new file
-    file = await bot.get_file(new_file_id)
-    download_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-
-    async with ClientSession() as session:
-        async with session.get(download_url) as resp:
-            return await resp.read()
-
 
 def resize_to_sticker(png_bytes):
-    """Resize to 512px max while keeping aspect ratio."""
-    img = Image.open(BytesIO(png_bytes))
-    img.thumbnail((512, 512))
-    output = BytesIO()
-    img.save(output, format="PNG")
-    return output.getvalue()
-
+    """Resize image to max 512x512 while keeping aspect ratio."""
+    try:
+        img = Image.open(BytesIO(png_bytes))
+        img.thumbnail((512, 512))
+        output = BytesIO()
+        img.save(output, format="PNG")
+        output.name = "sticker.png"
+        return output
+    except Exception as e:
+        raise Exception(f"Image resizing failed: {e}")
 
 async def pack_exists():
     try:
@@ -57,33 +37,30 @@ async def pack_exists():
     except:
         return False
 
+async def create_pack(png_file):
+    """Create sticker pack if it doesn't exist."""
+    try:
+        await bot.create_new_sticker_set(
+            user_id=OWNER_ID,
+            name=PACK_NAME,
+            title="Shared Sticker Pack",
+            png_sticker=png_file,
+            emojis="⭐"
+        )
+    except Exception as e:
+        raise Exception(f"Failed to create sticker pack: {e}")
 
-async def create_pack(png_bytes):
-    """Creates sticker pack if it doesn't exist."""
-    file = BytesIO(png_bytes)
-    file.name = "sticker.png"
-
-    await bot.create_new_sticker_set(
-        user_id=OWNER_ID,
-        name=PACK_NAME,
-        title="Shared Sticker Pack",
-        png_sticker=file,
-        emojis="⭐"
-    )
-
-
-async def add_to_pack(png_bytes):
-    """Uploads & adds a sticker to the pack."""
-    file = BytesIO(png_bytes)
-    file.name = "sticker.png"
-
-    await bot.add_sticker_to_set(
-        user_id=OWNER_ID,
-        name=PACK_NAME,
-        png_sticker=file,
-        emojis="⭐"
-    )
-
+async def add_to_pack(png_file):
+    """Add sticker to existing pack."""
+    try:
+        await bot.add_sticker_to_set(
+            user_id=OWNER_ID,
+            name=PACK_NAME,
+            png_sticker=png_file,
+            emojis="⭐"
+        )
+    except Exception as e:
+        raise Exception(f"Failed to add sticker to pack: {e}")
 
 # -------------------------
 # Handlers
@@ -92,45 +69,50 @@ async def add_to_pack(png_bytes):
 @dp.message(CommandStart())
 async def start(message: types.Message):
     await message.answer(
-        "Send me a photo and I’ll turn it into a sticker with background removed!\n\n"
-        f"Sticker pack: https://t.me/addstickers/{PACK_NAME}"
+        "Hi! Send me a photo and I will prepare it for a sticker.\n\n"
+        "You will then be able to select objects to keep using Telegram's sticker editor.\n"
+        f"Sticker pack link: https://t.me/addstickers/{PACK_NAME}"
     )
-
 
 @dp.message()
 async def handle_photo(message: types.Message):
-
     if not message.photo:
-        return await message.answer("Please send a *photo*.")
+        return await message.answer("Please send a photo.")
 
-    await message.answer("Processing… removing background…")
+    await message.answer("Processing your photo...")
 
-    # Highest quality photo
+    # Take the highest quality photo
     file_id = message.photo[-1].file_id
+    try:
+        file = await bot.download_file(file_id)
+        photo_bytes = await file.read()
+        sticker_file = resize_to_sticker(photo_bytes)
 
-    # Step 1 — background removal
-    png = await remove_background(file_id)
+        # Ensure sticker pack exists
+        if not await pack_exists():
+            await create_pack(sticker_file)
+            await message.answer(
+                f"Sticker pack created!\nYou can add more here: https://t.me/addstickers/{PACK_NAME}"
+            )
+        else:
+            try:
+                await add_to_pack(sticker_file)
+                await message.answer(
+                    f"Sticker added to pack!\nSee: https://t.me/addstickers/{PACK_NAME}"
+                )
+            except Exception as e:
+                await message.answer(
+                    f"Failed to add sticker. Reason: {e}\n"
+                    "You might need to manually add the sticker using Telegram's interactive editor."
+                )
 
-    # Step 2 — resize
-    final_png = resize_to_sticker(png)
-
-    # Step 3 — ensure pack exists
-    if not await pack_exists():
-        await create_pack(final_png)
-        await message.answer(
-            f"Created sticker pack!\nhttps://t.me/addstickers/{PACK_NAME}"
-        )
-    else:
-        await add_to_pack(final_png)
-
-    await message.answer(
-        f"Sticker added!\nhttps://t.me/addstickers/{PACK_NAME}"
-    )
-
+    except Exception as e:
+        await message.answer(f"Sticker creation failed. Reason: {e}")
 
 # -------------------------
 # Run bot
 # -------------------------
+
 async def main():
     logging.basicConfig(level=logging.INFO)
     await dp.start_polling(bot)
