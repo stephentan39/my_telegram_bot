@@ -6,7 +6,6 @@ from PIL import Image
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
-from aiogram.client.exceptions import TelegramNetworkError
 
 # -------------------------
 # Environment Variables
@@ -68,8 +67,8 @@ async def get_bot_me_with_retry(retries=5, delay=5):
     for attempt in range(retries):
         try:
             return await bot.me()
-        except TelegramNetworkError as e:
-            logging.warning(f"Attempt {attempt+1} failed: {e}")
+        except Exception as e:
+            logging.warning(f"Attempt {attempt+1} to get bot info failed: {e}")
             if attempt < retries - 1:
                 await asyncio.sleep(delay)
             else:
@@ -130,15 +129,13 @@ async def main():
     # Retry getting bot info before polling
     await get_bot_me_with_retry()
     logging.info("Bot info retrieved successfully. Starting polling...")
-    # Start polling with higher timeout for network stability
+    
+    # Polling loop with error handling to keep bot running
     while True:
         try:
             await dp.start_polling(bot, timeout=60)
-        except TelegramNetworkError as e:
-            logging.error(f"Network error during polling: {e}, retrying in 5s...")
-            await asyncio.sleep(5)
         except Exception as e:
-            logging.error(f"Unexpected error: {e}, retrying in 5s...")
+            logging.error(f"Error during polling: {e}, retrying in 5 seconds...")
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
