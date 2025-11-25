@@ -14,7 +14,8 @@ TOKEN = os.environ.get("BOT_TOKEN")
 PACK_NAME = os.environ.get("STICKER_PACK_NAME")
 OWNER_ID = int(os.environ.get("OWNER_USER_ID"))
 
-bot = Bot(token=TOKEN)
+# Increase timeout to 60 seconds for slow networks
+bot = Bot(token=TOKEN, request_kwargs={"timeout": 60})
 dp = Dispatcher()
 
 # -------------------------
@@ -62,17 +63,17 @@ async def add_to_pack(png_file):
     except Exception as e:
         raise Exception(f"Failed to add sticker to pack: {e}")
 
-async def get_bot_me_with_retry(retries=5, delay=5):
-    """Retry getting bot info to handle temporary network issues."""
-    for attempt in range(retries):
+async def get_bot_me_with_retry(max_attempts=5):
+    """Retry getting bot info with exponential backoff to handle network issues."""
+    delay = 5
+    for attempt in range(max_attempts):
         try:
             return await bot.me()
         except Exception as e:
             logging.warning(f"Attempt {attempt+1} to get bot info failed: {e}")
-            if attempt < retries - 1:
-                await asyncio.sleep(delay)
-            else:
-                raise
+            await asyncio.sleep(delay)
+            delay *= 2
+    raise Exception("Unable to connect to Telegram API after multiple attempts")
 
 # -------------------------
 # Handlers
@@ -126,17 +127,18 @@ async def handle_photo(message: types.Message):
 # -------------------------
 async def main():
     logging.basicConfig(level=logging.INFO)
-    # Retry getting bot info before polling
+    
+    # Retry getting bot info with exponential backoff
     await get_bot_me_with_retry()
     logging.info("Bot info retrieved successfully. Starting polling...")
-    
+
     # Polling loop with error handling to keep bot running
     while True:
         try:
             await dp.start_polling(bot, timeout=60)
         except Exception as e:
-            logging.error(f"Error during polling: {e}, retrying in 5 seconds...")
-            await asyncio.sleep(5)
+            logging.error(f"Polling failed: {e}, retrying in 10 seconds...")
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
     asyncio.run(main())
