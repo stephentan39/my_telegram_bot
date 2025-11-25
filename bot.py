@@ -33,7 +33,7 @@ def resize_to_sticker(png_bytes):
         raise Exception(f"Image resizing failed: {e}")
 
 async def get_bot_username():
-    """Retrieve bot username dynamically and lowercase it."""
+    """Retrieve bot username dynamically in lowercase."""
     info = await bot.me()
     return info.username.lower()
 
@@ -90,10 +90,11 @@ async def get_bot_me_with_retry(max_attempts=5):
 @dp.message(CommandStart())
 async def start(message: types.Message):
     pack_name = await get_pack_name()
+    pack_link = f"https://t.me/addstickers/{pack_name}"
     await message.answer(
         "Hi! Send me a photo and I will prepare it for a sticker.\n\n"
         "You can then select objects to keep using Telegram's sticker editor.\n"
-        f"Sticker pack link: https://t.me/addstickers/{pack_name}"
+        f"Sticker pack link: {pack_link}"
     )
 
 @dp.message()
@@ -111,18 +112,19 @@ async def handle_photo(message: types.Message):
 
         sticker_file = resize_to_sticker(photo_bytes)
         pack_name = await get_pack_name()
+        pack_link = f"https://t.me/addstickers/{pack_name}"
 
         # Ensure sticker pack exists
         if not await pack_exists(pack_name):
             await create_pack(pack_name, sticker_file)
             await message.answer(
-                f"Sticker pack created!\nYou can add more here: https://t.me/addstickers/{pack_name}"
+                f"Sticker pack created!\nYou can add more here: {pack_link}"
             )
         else:
             try:
                 await add_to_pack(pack_name, sticker_file)
                 await message.answer(
-                    f"Sticker added to pack!\nSee: https://t.me/addstickers/{pack_name}"
+                    f"Sticker added to pack!\nSee: {pack_link}"
                 )
             except Exception as e:
                 await message.answer(
