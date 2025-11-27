@@ -3,3 +3,4 @@ aiohttp==3.9.5
 Pillow==10.2.0
 python-dotenv==1.0.1
 rembg
+onnxruntime # Added to resolve ModuleNotFoundError
